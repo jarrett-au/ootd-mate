@@ -24,7 +24,7 @@ class CallbackRequest(BaseModel):
 
 
 @router.post("/login")
-async def login(request: Request, body: LoginRequest) -> Dict[str, str]:
+async def login(request: Request, body: LoginRequest) -> Response:
     """
     Initiate OAuth login flow with PKCE.
 
@@ -33,7 +33,7 @@ async def login(request: Request, body: LoginRequest) -> Dict[str, str]:
         body: Login request with provider and redirect URL
 
     Returns:
-        Dictionary with authorization URL
+        Response with authorization URL and cookies set
     """
     if body.provider != "google":
         raise HTTPException(
@@ -44,10 +44,6 @@ async def login(request: Request, body: LoginRequest) -> Dict[str, str]:
     # Generate PKCE code verifier and code challenge
     code_verifier = secrets.token_urlsafe(32)
     code_challenge = code_verifier  # In production, hash this with SHA256
-
-    # Store code_verifier in session/cookie for callback verification
-    # For simplicity, we'll use a cookie
-    redirect_response = Response()
 
     # Create callback URL
     frontend_url = settings.frontend_url.rstrip("/")
@@ -63,8 +59,12 @@ async def login(request: Request, body: LoginRequest) -> Dict[str, str]:
         f"&code_challenge_method=plain"  # Use S256 in production
     )
 
+    # Create response with JSON body and cookies
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content={"url": auth_url})
+
     # Store code verifier in HTTP-only cookie
-    redirect_response.set_cookie(
+    response.set_cookie(
         key="sb-code-verifier",
         value=code_verifier,
         httponly=True,
@@ -73,7 +73,7 @@ async def login(request: Request, body: LoginRequest) -> Dict[str, str]:
         max_age=600  # 10 minutes
     )
 
-    redirect_response.set_cookie(
+    response.set_cookie(
         key="sb-redirect-to",
         value=body.redirect_to,
         httponly=True,
@@ -82,17 +82,13 @@ async def login(request: Request, body: LoginRequest) -> Dict[str, str]:
         max_age=600
     )
 
-    import json
-    redirect_response.content = json.dumps({"url": auth_url})
-    redirect_response.media_type = "application/json"
-
-    return redirect_response
+    return response
 
 
 @router.get("/callback")
 async def callback_oauth_get(
     request: Request,
-    code: str,
+    code: str = None,
     state: str = None,
     error: str = None,
     error_description: str = None
@@ -114,6 +110,12 @@ async def callback_oauth_get(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"OAuth error: {error_description or error}"
+        )
+
+    if not code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Authorization code is required"
         )
 
     # Get code verifier from cookie
@@ -190,7 +192,7 @@ async def callback_oauth_get(
 
 
 @router.post("/logout")
-async def logout(request: Request) -> Dict[str, str]:
+async def logout(request: Request) -> Response:
     """
     Logout user by clearing cookies.
 
@@ -198,7 +200,7 @@ async def logout(request: Request) -> Dict[str, str]:
         request: FastAPI request object
 
     Returns:
-        Success message
+        Response with cleared cookies
     """
     # Get refresh token if available
     refresh_token = request.cookies.get("sb-refresh-token")
@@ -219,10 +221,8 @@ async def logout(request: Request) -> Dict[str, str]:
             pass  # Continue even if revocation fails
 
     # Create response that clears cookies
-    response_data = {"message": "Logged out successfully"}
-
-    # Create Response object to manage cookies
-    response = Response(content=response_data, media_type="application/json")
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content={"message": "Logged out successfully"})
 
     # Clear all auth cookies
     response.delete_cookie("sb-access-token", path="/")
