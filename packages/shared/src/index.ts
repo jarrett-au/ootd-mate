@@ -13,3 +13,13 @@ export type {
   Conversation,
   Message,
 } from "./types/outfit";
+
+// Auth types
+export type {
+  User,
+  Session,
+  AuthContext,
+  LoginResponse,
+  AuthError,
+  MeResponse,
+} from "./types/auth";
