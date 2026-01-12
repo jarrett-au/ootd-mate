@@ -22,8 +22,26 @@ model User {
   outfits       Outfit[]
   conversations Conversation[]
   collections   Collection[]
+  profile       Profile?
 
   @@map("users")
+}
+
+model Profile {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  height            Int?     // cm
+  weight            Float?   // kg
+  primaryStyle      String?  // casual, formal, minimalist, bohemian, streetwear, preppy, athletic
+  secondaryStyle    String?
+  occasions         String?  // JSON array: work, date, casual, events/formal, athletic
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("profiles")
 }
 
 model ClothingItem {
